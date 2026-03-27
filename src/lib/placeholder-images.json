@@ -1,3 +1,34 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "avatar1",
+      "description": "A stoic male warrior with a faint scar.",
+      "imageUrl": "https://picsum.photos/seed/avatar1/128/128",
+      "imageHint": "fantasy warrior"
+    },
+    {
+      "id": "avatar2",
+      "description": "A mysterious female sorceress with glowing eyes.",
+      "imageUrl": "https://picsum.photos/seed/avatar2/128/128",
+      "imageHint": "fantasy sorceress"
+    },
+    {
+      "id": "avatar3",
+      "description": "A heavily armored knight with a stoic expression.",
+      "imageUrl": "https://picsum.photos/seed/avatar3/128/128",
+      "imageHint": "fantasy knight"
+    },
+    {
+      "id": "avatar4",
+      "description": "A nimble rogue with a hooded cloak.",
+      "imageUrl": "https://picsum.photos/seed/avatar4/128/128",
+      "imageHint": "fantasy rogue"
+    },
+    {
+      "id": "avatar5",
+      "description": "A dark, shadowy figure with obscured features.",
+      "imageUrl": "https://picsum.photos/seed/avatar5/128/128",
+      "imageHint": "shadow figure"
+    }
+  ]
 }
