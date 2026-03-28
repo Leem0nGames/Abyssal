@@ -1,0 +1,552 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0f0f23;
+  color: #eee;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+}
+
+.container {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 280px;
+  padding: 1rem;
+  background: #16213e;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+}
+
+.sidebar h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.notification {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  animation: slideIn 0.3s ease-out;
+}
+
+.notification.error {
+  background: rgba(255, 68, 68, 0.2);
+  border: 1px solid #ff4444;
+  color: #ff6b6b;
+}
+
+.notification.info {
+  background: rgba(0, 255, 136, 0.1);
+  border: 1px solid #00ff88;
+  color: #00ff88;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.card {
+  background: #1a1a2e;
+  padding: 1rem;
+  border-radius: 8px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.dot.online {
+  background: #00ff88;
+  box-shadow: 0 0 8px #00ff88;
+}
+
+.dot.offline {
+  background: #ff4444;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form input {
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #0f0f23;
+  color: #fff;
+}
+
+.form input[type="number"] {
+  width: 80px;
+}
+
+.form button {
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  border: none;
+  background: #00ff88;
+  color: #000;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.form button:hover {
+  background: #00cc6a;
+}
+
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.player-level-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.player-id {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.player-id code {
+  color: #00ff88;
+  background: #0f0f23;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.nearby-poi {
+  background: linear-gradient(135deg, #2a1a3a 0%, #1a2a3a 100%);
+  border: 1px solid #9b59b6;
+}
+
+.poi-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.poi-header .poi-icon {
+  font-size: 1.5rem;
+}
+
+.poi-header h3 {
+  font-size: 1rem;
+  color: #fff;
+}
+
+.poi-type {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 0.5rem;
+}
+
+.poi-hint {
+  font-size: 0.85rem;
+  color: #00ff88;
+}
+
+.poi-hint strong {
+  color: #fff;
+  background: #00ff88;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  color: #000;
+}
+
+.poi-locked {
+  font-size: 0.85rem;
+  color: #ff4444;
+}
+
+.mission-active {
+  background: linear-gradient(135deg, #1a3a1a 0%, #2a3a2a 100%);
+  border: 1px solid #2ecc71;
+}
+
+.mission-active h3 {
+  font-size: 0.9rem;
+  color: #2ecc71;
+  margin-bottom: 0.5rem;
+}
+
+.mission-active p {
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.mission-active button {
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  border: none;
+  background: #ff4757;
+  color: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.mission-active button:hover {
+  background: #ff6b81;
+}
+
+.player-list {
+  list-style: none;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.player-list li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #333;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.player-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.player-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-level {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.zone-list,
+.poi-list {
+  list-style: none;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.zone-list li,
+.poi-list li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #333;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.zone-list li:last-child,
+.poi-list li:last-child {
+  border-bottom: none;
+}
+
+.zone-icon,
+.poi-icon {
+  font-size: 1rem;
+}
+
+.zone-name,
+.poi-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zone-list li.locked .zone-name,
+.poi-list li.locked .poi-name {
+  color: #666;
+}
+
+.zone-level,
+.poi-level {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: #0f0f23;
+}
+
+.zone-list li.locked .zone-level,
+.poi-list li.locked .poi-level {
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.2);
+}
+
+.zone-list li.unlocked .zone-level,
+.poi-list li.unlocked .poi-level {
+  color: #00ff88;
+  background: rgba(0, 255, 136, 0.2);
+}
+
+.empty {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.controls {
+  margin-top: auto;
+}
+
+.controls h2 {
+  margin-bottom: 0.75rem;
+}
+
+.controls-grid {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.control-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.key {
+  width: 32px;
+  height: 32px;
+  background: #0f0f23;
+  border: 1px solid #333;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.key.big {
+  width: 48px;
+  height: 48px;
+  font-size: 1rem;
+  font-weight: bold;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: #fff;
+}
+
+.keys {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.key-row {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.game-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.game-container {
+  width: 100%;
+  height: 100%;
+}
+
+.game-container canvas {
+  display: block;
+}
+
+.mission-container {
+  width: 100%;
+  height: 100vh;
+  background: #0a0a15;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: #fff;
+  font-size: 1.5rem;
+}
+
+.class-selection {
+  background: #1a1a2e;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.class-selection h2 {
+  text-align: center;
+  margin-bottom: 1rem;
+  color: #ffd700;
+  font-size: 1.2rem;
+}
+
+.class-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.class-card {
+  background: #16213e;
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.class-card:hover {
+  border-color: var(--class-color);
+  transform: translateY(-2px);
+}
+
+.class-card.selected {
+  border-color: var(--class-color);
+  background: linear-gradient(135deg, rgba(0,0,0,0.5), rgba(0,0,0,0.3));
+  box-shadow: 0 0 15px var(--class-color);
+}
+
+.class-icon {
+  font-size: 2rem;
+  margin-bottom: 0.25rem;
+}
+
+.class-card h3 {
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+  color: var(--class-color);
+}
+
+.class-element {
+  font-size: 0.7rem;
+  color: #888;
+  text-transform: capitalize;
+  margin-bottom: 0.15rem;
+}
+
+.class-subelement {
+  font-size: 0.65rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 0.25rem;
+}
+
+.class-description {
+  font-size: 0.6rem;
+  color: #aaa;
+  line-height: 1.3;
+}
+
+.confirm-class-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  border: none;
+  border-radius: 6px;
+  color: #000;
+  font-weight: bold;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.confirm-class-btn:disabled {
+  background: #333;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.confirm-class-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+}
+
+.selected-class {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.class-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: #fff;
+}
+
+.change-class-btn {
+  padding: 0.25rem 0.5rem;
+  background: #333;
+  border: none;
+  border-radius: 4px;
+  color: #aaa;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.change-class-btn:hover {
+  background: #444;
+  color: #fff;
+}
+
+.player-class-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #fff;
+}
