@@ -252,15 +252,61 @@ export enum TrapType {
   BOULDER = 'boulder',
 }
 
+export enum TrapTier {
+  T1 = 't1',
+  T2 = 't2',
+  T3 = 't3',
+}
+
+export interface TrapTierStats {
+  tier: TrapTier;
+  name: string;
+  damageMultiplier: number;
+  cooldownReduction: number;
+  upgradeCost: { gold: number; essence: number };
+}
+
+export const TRAP_TIER_DATA: Record<TrapTier, TrapTierStats> = {
+  [TrapTier.T1]: {
+    tier: TrapTier.T1,
+    name: 'T1',
+    damageMultiplier: 1.0,
+    cooldownReduction: 0,
+    upgradeCost: { gold: 75, essence: 15 },
+  },
+  [TrapTier.T2]: {
+    tier: TrapTier.T2,
+    name: 'T2',
+    damageMultiplier: 1.5,
+    cooldownReduction: 500,
+    upgradeCost: { gold: 150, essence: 30 },
+  },
+  [TrapTier.T3]: {
+    tier: TrapTier.T3,
+    name: 'T3',
+    damageMultiplier: 2.25,
+    cooldownReduction: 1000,
+    upgradeCost: { gold: 300, essence: 60 },
+  },
+};
+
+export const TRAP_TIER_COLORS: Record<TrapTier, string> = {
+  [TrapTier.T1]: '#9d9d9d',
+  [TrapTier.T2]: '#1eff00',
+  [TrapTier.T3]: '#a335ee',
+};
+
 export interface Trap {
   id: string;
   type: TrapType;
+  tier: TrapTier;
   damage: number;
   cooldown: number;
   position: { x: number; z: number };
   ownerId: string;
   lastTriggered: number;
   isActive: boolean;
+  upgradeLevel: number;
 }
 
 export interface HubState {
@@ -319,3 +365,163 @@ export interface TrapEvent {
   damage?: number;
   enemyId?: string;
 }
+
+export interface PlayerCurrency {
+  gold: number;
+  essence: number;
+}
+
+export enum UpgradeType {
+  TRAP_DAMAGE = 'trap_damage',
+  TRAP_COOLDOWN = 'trap_cooldown',
+  ABILITY_POWER = 'ability_power',
+  ABILITY_COOLDOWN = 'ability_cooldown',
+}
+
+export interface Upgrade {
+  id: UpgradeType;
+  name: string;
+  description: string;
+  maxLevel: number;
+  costGold: number[];
+  costEssence: number[];
+  effectPerLevel: number[];
+}
+
+export const UPGRADES: Record<UpgradeType, Upgrade> = {
+  [UpgradeType.TRAP_DAMAGE]: {
+    id: UpgradeType.TRAP_DAMAGE,
+    name: 'Trap Damage',
+    description: 'Increase trap damage',
+    maxLevel: 10,
+    costGold: [50, 100, 200, 350, 500, 700, 1000, 1500, 2000, 3000],
+    costEssence: [10, 20, 35, 50, 75, 100, 150, 200, 300, 500],
+    effectPerLevel: [10, 15, 20, 25, 30, 35, 40, 45, 50, 60],
+  },
+  [UpgradeType.TRAP_COOLDOWN]: {
+    id: UpgradeType.TRAP_COOLDOWN,
+    name: 'Trap Speed',
+    description: 'Reduce trap cooldown',
+    maxLevel: 5,
+    costGold: [100, 250, 500, 1000, 2000],
+    costEssence: [25, 50, 100, 200, 400],
+    effectPerLevel: [500, 750, 1000, 1250, 1500],
+  },
+  [UpgradeType.ABILITY_POWER]: {
+    id: UpgradeType.ABILITY_POWER,
+    name: 'Ability Power',
+    description: 'Increase ability damage',
+    maxLevel: 10,
+    costGold: [75, 150, 300, 500, 750, 1000, 1500, 2000, 3000, 5000],
+    costEssence: [15, 30, 50, 75, 100, 150, 200, 300, 500, 750],
+    effectPerLevel: [5, 10, 15, 20, 25, 30, 40, 50, 60, 75],
+  },
+  [UpgradeType.ABILITY_COOLDOWN]: {
+    id: UpgradeType.ABILITY_COOLDOWN,
+    name: 'Ability Haste',
+    description: 'Reduce ability cooldowns',
+    maxLevel: 5,
+    costGold: [150, 350, 750, 1500, 3000],
+    costEssence: [30, 75, 150, 300, 600],
+    effectPerLevel: [200, 400, 600, 800, 1000],
+  },
+};
+
+export enum LootRarity {
+  COMMON = 'common',
+  RARE = 'rare',
+  EPIC = 'epic',
+}
+
+export enum LootType {
+  WEAPON = 'weapon',
+  ARMOR = 'armor',
+  ACCESSORY = 'accessory',
+  CONSUMABLE = 'consumable',
+}
+
+export enum LootModifier {
+  DAMAGE_BOOST = 'damage_boost',
+  COOLDOWN_REDUCTION = 'cooldown_reduction',
+  TRAP_EFFICIENCY = 'trap_efficiency',
+  GOLD_FIND = 'gold_find',
+  ESSENCE_FIND = 'essence_find',
+  CRITICAL_HIT = 'critical_hit',
+}
+
+export interface LootModifierData {
+  type: LootModifier;
+  value: number;
+  name: string;
+  description: string;
+}
+
+export interface LootItem {
+  id: string;
+  name: string;
+  type: LootType;
+  rarity: LootRarity;
+  level: number;
+  modifiers: LootModifierData[];
+  sellValue: number;
+  icon: string;
+}
+
+export const LOOT_MODIFIER_DATA: Record<LootModifier, { name: string; description: string }> = {
+  [LootModifier.DAMAGE_BOOST]: {
+    name: 'Damage Boost',
+    description: '+X% ability damage',
+  },
+  [LootModifier.COOLDOWN_REDUCTION]: {
+    name: 'Cooldown Reduction',
+    description: '-X% ability cooldowns',
+  },
+  [LootModifier.TRAP_EFFICIENCY]: {
+    name: 'Trap Efficiency',
+    description: '+X% trap damage',
+  },
+  [LootModifier.GOLD_FIND]: {
+    name: 'Gold Find',
+    description: '+X% gold from kills',
+  },
+  [LootModifier.ESSENCE_FIND]: {
+    name: 'Essence Find',
+    description: '+X% essence from kills',
+  },
+  [LootModifier.CRITICAL_HIT]: {
+    name: 'Critical Hit',
+    description: '+X% critical hit chance',
+  },
+};
+
+export const LOOT_TYPE_NAMES: Record<LootType, string> = {
+  [LootType.WEAPON]: 'Weapon',
+  [LootType.ARMOR]: 'Armor',
+  [LootType.ACCESSORY]: 'Accessory',
+  [LootType.CONSUMABLE]: 'Consumable',
+};
+
+export const RARITY_COLORS: Record<LootRarity, string> = {
+  [LootRarity.COMMON]: '#9d9d9d',
+  [LootRarity.RARE]: '#1eff00',
+  [LootRarity.EPIC]: '#a335ee',
+};
+
+export const RARITY_NAMES: Record<LootRarity, string> = {
+  [LootRarity.COMMON]: 'Common',
+  [LootRarity.RARE]: 'Rare',
+  [LootRarity.EPIC]: 'Epic',
+};
+
+export const RARITY_DROP_RATES: Record<LootRarity, number> = {
+  [LootRarity.COMMON]: 0.6,
+  [LootRarity.RARE]: 0.3,
+  [LootRarity.EPIC]: 0.1,
+};
+
+export const LOOT_ITEM_PREFIXES: Record<LootType, string[]> = {
+  [LootType.WEAPON]: ['Ancient', 'Cursed', 'Enchanted', 'Blessed', 'Shadow'],
+  [LootType.ARMOR]: ['Sturdy', 'Runed', 'Guardian', 'Spirit', 'Dragon'],
+  [LootType.ACCESSORY]: ['Mystic', 'Arcane', 'Ethereal', 'Celestial', 'Void'],
+  [LootType.CONSUMABLE]: ['Elixir', 'Potion', 'Rune', 'Scroll', 'Crystal'],
+};

@@ -4,16 +4,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts #",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:migration:run": "prisma migrate deploy"
   },
   "dependencies": {
     "@game/shared": "1.0.0",
+    "@prisma/client": "^7.6.0",
     "colyseus": "^0.16.0",
     "dotenv": "^16.4.1",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "prisma": "^7.6.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

@@ -2,25 +2,34 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
-import { 
-  TrapType, 
-  AbilityType, 
+import {
+  TrapType,
+  TrapTier,
+  TRAP_TIER_COLORS,
+  AbilityType,
   StatusEffectType,
   ABILITIES,
   PlayerClass,
   CLASS_ABILITIES,
-  ElementType 
+  ElementType,
+  UpgradeType,
+  UPGRADES,
+  LootItem,
+  RARITY_COLORS,
 } from '@game/shared';
+import { useGameStore } from '../store/gameStore';
 
 interface Trap {
   id: string;
   type: TrapType;
+  tier: TrapTier;
   damage: number;
   position: { x: number; z: number };
   cooldown: number;
   lastTriggered: number;
   isActive: boolean;
   isTriggered: boolean;
+  upgradeLevel: number;
 }
 
 interface StatusEffect {
@@ -80,10 +89,19 @@ const ELEMENT_COLORS: Record<ElementType, string> = {
   [ElementType.AIR]: '#9932cc',
 };
 
-function TrapMesh({ trap, onRemove }: { trap: Trap; onRemove: () => void }) {
+function TrapMesh({
+  trap,
+  onRemove,
+  onUpgrade,
+}: {
+  trap: Trap;
+  onRemove: () => void;
+  onUpgrade: () => void;
+}) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
 
-  useFrame((state) => {
+  useFrame(state => {
     if (meshRef.current) {
       if (trap.isTriggered) {
         meshRef.current.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 15) * 0.3);
@@ -91,42 +109,63 @@ function TrapMesh({ trap, onRemove }: { trap: Trap; onRemove: () => void }) {
         meshRef.current.scale.setScalar(1);
       }
     }
+    if (ringRef.current) {
+      ringRef.current.rotation.z += 0.02;
+    }
   });
 
   const getColors = () => {
     if (trap.isTriggered) return { base: '#ff0000', emissive: '#ff0000', intensity: 2 };
     switch (trap.type) {
-      case TrapType.SPIKE: return { base: '#888888', emissive: '#444444', intensity: 0.3 };
-      case TrapType.FIRE: return { base: '#ff4400', emissive: '#ff2200', intensity: 0.8 };
-      case TrapType.BOULDER: return { base: '#665544', emissive: '#332211', intensity: 0.3 };
-      default: return { base: '#666666', emissive: '#000000', intensity: 0 };
+      case TrapType.SPIKE:
+        return { base: '#888888', emissive: '#444444', intensity: 0.3 };
+      case TrapType.FIRE:
+        return { base: '#ff4400', emissive: '#ff2200', intensity: 0.8 };
+      case TrapType.BOULDER:
+        return { base: '#665544', emissive: '#332211', intensity: 0.3 };
+      default:
+        return { base: '#666666', emissive: '#000000', intensity: 0 };
     }
   };
 
   const colors = getColors();
+  const tierColor = TRAP_TIER_COLORS[trap.tier];
 
   return (
-    <mesh
-      ref={meshRef}
-      position={[trap.position.x, 0.2, trap.position.z]}
-      onClick={(e) => { e.stopPropagation(); onRemove(); }}
-    >
-      <cylinderGeometry args={[0.6, 0.8, 0.4, 8]} />
-      <meshStandardMaterial
-        color={colors.base}
-        emissive={colors.emissive}
-        emissiveIntensity={colors.intensity}
-        roughness={0.5}
-      />
-    </mesh>
+    <group position={[trap.position.x, 0, trap.position.z]}>
+      <mesh
+        ref={meshRef}
+        position={[0, 0.2, 0]}
+        onClick={e => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        onContextMenu={e => {
+          e.stopPropagation();
+          onUpgrade();
+        }}
+      >
+        <cylinderGeometry args={[0.6, 0.8, 0.4, 8]} />
+        <meshStandardMaterial
+          color={colors.base}
+          emissive={colors.emissive}
+          emissiveIntensity={colors.intensity}
+          roughness={0.5}
+        />
+      </mesh>
+      <mesh ref={ringRef} position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.7, 0.85, 32]} />
+        <meshBasicMaterial color={tierColor} transparent opacity={0.8} />
+      </mesh>
+    </group>
   );
 }
 
-function AbilityEffect({ 
-  position, 
+function AbilityEffect({
+  position,
   element,
-  onComplete 
-}: { 
+  onComplete,
+}: {
   position: { x: number; z: number };
   element: ElementType;
   onComplete: () => void;
@@ -149,22 +188,22 @@ function AbilityEffect({
   return (
     <mesh ref={meshRef} position={[position.x, 0.5, position.z]} rotation={[-Math.PI / 2, 0, 0]}>
       <ringGeometry args={[0.5, 1, 16]} />
-      <meshBasicMaterial 
-        color={ELEMENT_COLORS[element]} 
-        transparent 
-        opacity={Math.max(0, 1 - scale / 3)} 
+      <meshBasicMaterial
+        color={ELEMENT_COLORS[element]}
+        transparent
+        opacity={Math.max(0, 1 - scale / 3)}
       />
     </mesh>
   );
 }
 
-function EnemyMesh({ 
-  enemy, 
-  traps, 
-  onTriggerTrap, 
+function EnemyMesh({
+  enemy,
+  traps,
+  onTriggerTrap,
   onStatusEffect,
-}: { 
-  enemy: Enemy; 
+}: {
+  enemy: Enemy;
   traps: Trap[];
   onTriggerTrap: (trap: Trap) => void;
   onStatusEffect: (enemyId: string, effect: StatusEffect) => void;
@@ -203,10 +242,10 @@ function EnemyMesh({
 
     groupRef.current.position.x = currentPosRef.current.x;
     groupRef.current.position.z = currentPosRef.current.z;
-    
+
     const bobSpeed = enemy.isSlowed ? 1.5 : enemy.isFrozen ? 0 : 3;
     groupRef.current.position.y = 0.5 + Math.sin(state.clock.elapsedTime * bobSpeed) * 0.1;
-    
+
     if (!enemy.isFrozen && !enemy.isSlowed) {
       groupRef.current.rotation.y += 0.02;
     }
@@ -250,8 +289,8 @@ function EnemyMesh({
     <group ref={groupRef} position={[PATH[0].x, 0.5, PATH[0].z]}>
       <mesh castShadow>
         <capsuleGeometry args={[0.35, 1, 4, 8]} />
-        <meshStandardMaterial 
-          color={bodyColor} 
+        <meshStandardMaterial
+          color={bodyColor}
           roughness={0.7}
           emissive={hasBurn ? '#ff0000' : hasFreeze ? '#0066ff' : '#000000'}
           emissiveIntensity={hasBurn || hasFreeze ? 0.3 : 0}
@@ -259,62 +298,58 @@ function EnemyMesh({
       </mesh>
       <mesh position={[0, 1.2, 0]} castShadow>
         <sphereGeometry args={[0.3, 16, 16]} />
-        <meshStandardMaterial 
-          color={bodyColor} 
+        <meshStandardMaterial
+          color={bodyColor}
           roughness={0.7}
           emissive={hasBurn ? '#ff0000' : hasFreeze ? '#0066ff' : '#000000'}
           emissiveIntensity={hasBurn || hasFreeze ? 0.5 : 0}
         />
       </mesh>
-      
+
       <mesh position={[-0.12, 1.3, 0.2]}>
         <sphereGeometry args={[0.06, 8, 8]} />
-        <meshStandardMaterial 
-          color={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'} 
-          emissive={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'} 
-          emissiveIntensity={0.8} 
+        <meshStandardMaterial
+          color={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'}
+          emissive={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'}
+          emissiveIntensity={0.8}
         />
       </mesh>
       <mesh position={[0.12, 1.3, 0.2]}>
         <sphereGeometry args={[0.06, 8, 8]} />
-        <meshStandardMaterial 
-          color={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'} 
-          emissive={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'} 
-          emissiveIntensity={0.8} 
+        <meshStandardMaterial
+          color={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'}
+          emissive={hasStun ? '#ffff00' : hasFreeze ? '#00ffff' : '#ff0000'}
+          emissiveIntensity={0.8}
         />
       </mesh>
-      
-      {hasBurn && (
-        <pointLight position={[0, 1, 0]} color="#ff4400" intensity={2} distance={3} />
-      )}
-      {hasFreeze && (
-        <pointLight position={[0, 1, 0]} color="#00ccff" intensity={2} distance={3} />
-      )}
+
+      {hasBurn && <pointLight position={[0, 1, 0]} color="#ff4400" intensity={2} distance={3} />}
+      {hasFreeze && <pointLight position={[0, 1, 0]} color="#00ccff" intensity={2} distance={3} />}
       {hasSlow && (
         <mesh position={[0, 0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.6, 0.8, 16]} />
           <meshBasicMaterial color="#9933ff" transparent opacity={0.5} />
         </mesh>
       )}
-      
+
       <mesh position={[0, 2, 0]}>
         <planeGeometry args={[1.2, 0.12]} />
         <meshBasicMaterial color="#222222" />
       </mesh>
       <mesh position={[0, 2, 0.01]}>
-        <planeGeometry args={[healthPercent / 100 * 1.1, 0.08]} />
-        <meshBasicMaterial 
-          color={healthPercent < 30 ? '#ff0000' : healthPercent < 60 ? '#ffaa00' : '#00ff00'} 
+        <planeGeometry args={[(healthPercent / 100) * 1.1, 0.08]} />
+        <meshBasicMaterial
+          color={healthPercent < 30 ? '#ff0000' : healthPercent < 60 ? '#ffaa00' : '#00ff00'}
         />
       </mesh>
     </group>
   );
 }
 
-function AbilityProjectileMesh({ 
+function AbilityProjectileMesh({
   projectile,
   onHit,
-}: { 
+}: {
   projectile: AbilityProjectile;
   onHit: (id: string, hit: boolean) => void;
 }) {
@@ -336,16 +371,21 @@ function AbilityProjectileMesh({
       projectile.position.x += (dx / dist) * speed;
       projectile.position.z += (dz / dist) * speed;
 
-      meshRef.current.position.set(projectile.position.x, projectile.position.y, projectile.position.z);
+      meshRef.current.position.set(
+        projectile.position.x,
+        projectile.position.y,
+        projectile.position.z
+      );
     }
   });
 
   return (
-    <mesh ref={meshRef} position={[projectile.position.x, projectile.position.y, projectile.position.z]}>
+    <mesh
+      ref={meshRef}
+      position={[projectile.position.x, projectile.position.y, projectile.position.z]}
+    >
       <sphereGeometry args={[0.3, 16, 16]} />
-      <meshBasicMaterial 
-        color={ELEMENT_COLORS[ability.element]} 
-      />
+      <meshBasicMaterial color={ELEMENT_COLORS[ability.element]} />
     </mesh>
   );
 }
@@ -356,8 +396,8 @@ function PathVisualization() {
       {PATH.map((point, i) => (
         <mesh key={i} position={[point.x, 0.02, point.z]}>
           <cylinderGeometry args={[0.3, 0.3, 0.05, 16]} />
-          <meshStandardMaterial 
-            color={i === 0 ? '#00ff00' : i === PATH.length - 1 ? '#ff0000' : '#4444ff'} 
+          <meshStandardMaterial
+            color={i === 0 ? '#00ff00' : i === PATH.length - 1 ? '#ff0000' : '#4444ff'}
             emissive={i === 0 ? '#00ff00' : i === PATH.length - 1 ? '#ff0000' : '#4444ff'}
             emissiveIntensity={0.3}
           />
@@ -411,11 +451,11 @@ function Lighting() {
   );
 }
 
-function TrapSelector({ 
-  selectedTrap, 
+function TrapSelector({
+  selectedTrap,
   onSelect,
-}: { 
-  selectedTrap: TrapType | null; 
+}: {
+  selectedTrap: TrapType | null;
   onSelect: (type: TrapType | null) => void;
 }) {
   const traps = [
@@ -425,21 +465,28 @@ function TrapSelector({
   ];
 
   return (
-    <div style={{
-      position: 'absolute',
-      bottom: 80,
-      left: 20,
-      display: 'flex',
-      gap: '0.5rem',
-      zIndex: 10,
-    }}>
-      {traps.map((trap) => (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 80,
+        left: 20,
+        display: 'flex',
+        gap: '0.5rem',
+        zIndex: 10,
+      }}
+    >
+      {traps.map(trap => (
         <button
           key={trap.type}
           onClick={() => onSelect(selectedTrap === trap.type ? null : trap.type)}
           style={{
             padding: '0.5rem 0.75rem',
-            background: selectedTrap === trap.type ? trap.type === TrapType.FIRE ? '#ff4400' : '#666' : '#222',
+            background:
+              selectedTrap === trap.type
+                ? trap.type === TrapType.FIRE
+                  ? '#ff4400'
+                  : '#666'
+                : '#222',
             border: selectedTrap === trap.type ? '2px solid #fff' : '2px solid #444',
             borderRadius: 6,
             color: '#fff',
@@ -458,13 +505,13 @@ function TrapSelector({
   );
 }
 
-function AbilityBar({ 
+function AbilityBar({
   abilities,
   cooldowns,
   onUseAbility,
   selectedAbility,
   onSelectAbility,
-}: { 
+}: {
   abilities: AbilityType[];
   cooldowns: Record<AbilityType, number>;
   onUseAbility: (type: AbilityType) => void;
@@ -472,15 +519,17 @@ function AbilityBar({
   onSelectAbility: (type: AbilityType | null) => void;
 }) {
   return (
-    <div style={{
-      position: 'absolute',
-      bottom: 20,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      display: 'flex',
-      gap: '0.5rem',
-      zIndex: 10,
-    }}>
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 20,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        gap: '0.5rem',
+        zIndex: 10,
+      }}
+    >
       {abilities.map((type, index) => {
         const ability = ABILITIES[type];
         const cooldownRemaining = Math.max(0, cooldowns[type] - Date.now());
@@ -512,24 +561,24 @@ function AbilityBar({
           >
             <span style={{ fontSize: '1.3rem' }}>{ability.icon}</span>
             <span style={{ fontSize: '0.65rem' }}>{ability.name}</span>
-            <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>
-              {index + 1}
-            </span>
+            <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>{index + 1}</span>
             {onCooldown && (
-              <div style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: 'rgba(0,0,0,0.7)',
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1rem',
-                fontWeight: 'bold',
-              }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: 'rgba(0,0,0,0.7)',
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                }}
+              >
                 {(cooldownRemaining / 1000).toFixed(1)}s
               </div>
             )}
@@ -543,20 +592,34 @@ function AbilityBar({
 interface MissionSceneProps {
   poiName: string;
   playerClass: PlayerClass;
-  onExit: () => void;
+  onExit: (results: {
+    waveReached: number;
+    enemiesKilled: number;
+    gold: number;
+    essence: number;
+    loot: LootItem[];
+  }) => void;
 }
 
 export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps) {
+  const { upgrades } = useGameStore();
+  const missionRewardsRef = useRef({ gold: 0, essence: 0, enemiesKilled: 0 });
   const [wave, setWave] = useState(1);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [traps, setTraps] = useState<Trap[]>([]);
   const [selectedTrap, setSelectedTrap] = useState<TrapType | null>(null);
   const [abilities, setAbilities] = useState<AbilityProjectile[]>([]);
-  const [abilityEffects, setAbilityEffects] = useState<{ id: string; position: { x: number; z: number }; element: ElementType }[]>([]);
-  const [cooldowns, setCooldowns] = useState<Record<AbilityType, number>>({} as Record<AbilityType, number>);
+  const [abilityEffects, setAbilityEffects] = useState<
+    { id: string; position: { x: number; z: number }; element: ElementType }[]
+  >([]);
+  const [cooldowns, setCooldowns] = useState<Record<AbilityType, number>>(
+    {} as Record<AbilityType, number>
+  );
   const [selectedAbility, setSelectedAbility] = useState<AbilityType | null>(null);
   const [phase, setPhase] = useState<'playing' | 'spawning'>('spawning');
   const [log, setLog] = useState<string[]>([]);
+  const [lootDrops, setLootDrops] = useState<LootItem[]>([]);
+  const collectedLootRef = useRef<LootItem[]>([]);
   const spawnTimerRef = useRef(0);
   const enemiesToSpawnRef = useRef(0);
 
@@ -609,156 +672,180 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
     return () => clearInterval(interval);
   }, [phase, spawnEnemy]);
 
-  const handleTriggerTrap = useCallback((trap: Trap) => {
-    const now = Date.now();
-    if (now - trap.lastTriggered < trap.cooldown) return;
+  const handleTriggerTrap = useCallback(
+    (trap: Trap) => {
+      const now = Date.now();
+      if (now - trap.lastTriggered < trap.cooldown) return;
 
-    setTraps(prev => prev.map(t => 
-      t.id === trap.id ? { ...t, lastTriggered: now, isTriggered: true } : t
-    ));
+      setTraps(prev =>
+        prev.map(t => (t.id === trap.id ? { ...t, lastTriggered: now, isTriggered: true } : t))
+      );
 
-    setEnemies(prev => {
-      let totalDamage = 0;
-      const updated = prev.map(enemy => {
-        if (!enemy.isDead) {
-          totalDamage += trap.damage;
-          return { ...enemy, health: enemy.health - trap.damage };
-        }
-        return enemy;
-      });
-
-      if (totalDamage > 0) {
-        addLog(`💥 Trap dealt ${totalDamage} total damage!`);
-      }
-
-      return updated;
-    });
-
-    setTimeout(() => {
-      setTraps(prev => prev.map(t => 
-        t.id === trap.id ? { ...t, isTriggered: false } : t
-      ));
-    }, 300);
-  }, [addLog]);
-
-  const applyAbilityEffect = useCallback((enemyId: string, effect: StatusEffect) => {
-    setEnemies(prev => {
-      return prev.map(enemy => {
-        if (enemy.id !== enemyId || enemy.isDead) return enemy;
-
-        const now = Date.now();
-        const existingEffect = enemy.statusEffects.find(e => e.type === effect.type);
-
-        if (existingEffect) {
-          return enemy;
-        }
-
-        const newEffect: StatusEffect = {
-          ...effect,
-          startTime: now,
-          isActive: true,
-        };
-
-        let isSlowed = enemy.isSlowed;
-        let isFrozen = enemy.isFrozen;
-        let isStunned = enemy.isStunned;
-
-        if (effect.type === StatusEffectType.SLOW) isSlowed = true;
-        if (effect.type === StatusEffectType.FREEZE) isFrozen = true;
-        if (effect.type === StatusEffectType.STUN) isStunned = true;
-
-        addLog(`✨ Applied ${effect.type} to enemy!`);
-
-        return {
-          ...enemy,
-          statusEffects: [...enemy.statusEffects, newEffect],
-          isSlowed,
-          isFrozen,
-          isStunned,
-        };
-      });
-    });
-  }, [addLog]);
-
-  const handleAbilityHit = useCallback((projectileId: string, hit: boolean) => {
-    const projectile = abilities.find(a => a.id === projectileId);
-    if (!projectile || !hit) {
-      setAbilities(prev => prev.filter(a => a.id !== projectileId));
-      return;
-    }
-
-    const ability = ABILITIES[projectile.type];
-
-    setAbilityEffects(prev => [...prev, {
-      id: `effect-${Date.now()}`,
-      position: { x: projectile.target.x, z: projectile.target.z },
-      element: ability.element,
-    }]);
-
-    setEnemies(prev => {
-      let totalDamage = 0;
-      const updated = prev.map(enemy => {
-        if (!enemy.isDead) {
-          const dx = enemy.id === projectile.id ? 0 : Math.random() * 2 - 1;
-          const dz = Math.random() * 2 - 1;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          
-          if (dist < (projectile.radius || 1)) {
-            totalDamage += projectile.damage;
-            
-            if (projectile.effect) {
-              const effect: StatusEffect = {
-                type: projectile.effect,
-                damage: projectile.effectDamage || 0,
-                duration: projectile.effectDuration || 0,
-                startTime: Date.now(),
-                isActive: true,
-              };
-              applyAbilityEffect(enemy.id, effect);
-            }
-
-            return { ...enemy, health: enemy.health - projectile.damage };
+      setEnemies(prev => {
+        let totalDamage = 0;
+        const updated = prev.map(enemy => {
+          if (!enemy.isDead) {
+            totalDamage += trap.damage;
+            return { ...enemy, health: enemy.health - trap.damage };
           }
+          return enemy;
+        });
+
+        if (totalDamage > 0) {
+          addLog(`💥 Trap dealt ${totalDamage} total damage!`);
         }
-        return enemy;
+
+        return updated;
       });
 
-      if (totalDamage > 0) {
-        addLog(`⚡ ${ability.name} dealt ${totalDamage} damage!`);
+      setTimeout(() => {
+        setTraps(prev => prev.map(t => (t.id === trap.id ? { ...t, isTriggered: false } : t)));
+      }, 300);
+    },
+    [addLog]
+  );
+
+  const applyAbilityEffect = useCallback(
+    (enemyId: string, effect: StatusEffect) => {
+      setEnemies(prev => {
+        return prev.map(enemy => {
+          if (enemy.id !== enemyId || enemy.isDead) return enemy;
+
+          const now = Date.now();
+          const existingEffect = enemy.statusEffects.find(e => e.type === effect.type);
+
+          if (existingEffect) {
+            return enemy;
+          }
+
+          const newEffect: StatusEffect = {
+            ...effect,
+            startTime: now,
+            isActive: true,
+          };
+
+          let isSlowed = enemy.isSlowed;
+          let isFrozen = enemy.isFrozen;
+          let isStunned = enemy.isStunned;
+
+          if (effect.type === StatusEffectType.SLOW) isSlowed = true;
+          if (effect.type === StatusEffectType.FREEZE) isFrozen = true;
+          if (effect.type === StatusEffectType.STUN) isStunned = true;
+
+          addLog(`✨ Applied ${effect.type} to enemy!`);
+
+          return {
+            ...enemy,
+            statusEffects: [...enemy.statusEffects, newEffect],
+            isSlowed,
+            isFrozen,
+            isStunned,
+          };
+        });
+      });
+    },
+    [addLog]
+  );
+
+  const handleAbilityHit = useCallback(
+    (projectileId: string, hit: boolean) => {
+      const projectile = abilities.find(a => a.id === projectileId);
+      if (!projectile || !hit) {
+        setAbilities(prev => prev.filter(a => a.id !== projectileId));
+        return;
       }
 
-      return updated;
-    });
+      const ability = ABILITIES[projectile.type];
 
-    setAbilities(prev => prev.filter(a => a.id !== projectileId));
-  }, [abilities, applyAbilityEffect, addLog]);
+      setAbilityEffects(prev => [
+        ...prev,
+        {
+          id: `effect-${Date.now()}`,
+          position: { x: projectile.target.x, z: projectile.target.z },
+          element: ability.element,
+        },
+      ]);
 
-  const useAbility = useCallback((type: AbilityType) => {
-    const now = Date.now();
-    if (cooldowns[type] && now < cooldowns[type]) return;
+      setEnemies(prev => {
+        let totalDamage = 0;
+        const updated = prev.map(enemy => {
+          if (!enemy.isDead) {
+            const dx = enemy.id === projectile.id ? 0 : Math.random() * 2 - 1;
+            const dz = Math.random() * 2 - 1;
+            const dist = Math.sqrt(dx * dx + dz * dz);
 
-    const ability = ABILITIES[type];
-    const targetX = (Math.random() - 0.5) * 6;
-    const targetZ = (Math.random() - 0.5) * 6;
+            if (dist < (projectile.radius || 1)) {
+              totalDamage += projectile.damage;
 
-    const projectile: AbilityProjectile = {
-      id: `proj-${Date.now()}`,
-      type,
-      position: { x: 0, y: 1, z: 4 },
-      target: { x: targetX, z: targetZ },
-      speed: 12,
-      damage: ability.damage,
-      effect: ability.effect,
-      effectDuration: ability.effectDuration,
-      effectDamage: ability.effectDamage,
-      radius: ability.radius,
-    };
+              if (projectile.effect) {
+                const effect: StatusEffect = {
+                  type: projectile.effect,
+                  damage: projectile.effectDamage || 0,
+                  duration: projectile.effectDuration || 0,
+                  startTime: Date.now(),
+                  isActive: true,
+                };
+                applyAbilityEffect(enemy.id, effect);
+              }
 
-    setAbilities(prev => [...prev, projectile]);
-    setCooldowns(prev => ({ ...prev, [type]: now + ability.cooldown }));
-    setSelectedAbility(null);
-    addLog(`Cast ${ability.name}!`);
-  }, [cooldowns, addLog]);
+              return { ...enemy, health: enemy.health - projectile.damage };
+            }
+          }
+          return enemy;
+        });
+
+        if (totalDamage > 0) {
+          addLog(`⚡ ${ability.name} dealt ${totalDamage} damage!`);
+        }
+
+        return updated;
+      });
+
+      setAbilities(prev => prev.filter(a => a.id !== projectileId));
+    },
+    [abilities, applyAbilityEffect, addLog]
+  );
+
+  const useAbility = useCallback(
+    (type: AbilityType) => {
+      const now = Date.now();
+      if (cooldowns[type] && now < cooldowns[type]) return;
+
+      const ability = ABILITIES[type];
+      const targetX = (Math.random() - 0.5) * 6;
+      const targetZ = (Math.random() - 0.5) * 6;
+
+      const powerBonus =
+        UPGRADES[UpgradeType.ABILITY_POWER].effectPerLevel[upgrades[UpgradeType.ABILITY_POWER]] ||
+        0;
+      const cooldownReduction =
+        UPGRADES[UpgradeType.ABILITY_COOLDOWN].effectPerLevel[
+          upgrades[UpgradeType.ABILITY_COOLDOWN]
+        ] || 0;
+
+      const projectile: AbilityProjectile = {
+        id: `proj-${Date.now()}`,
+        type,
+        position: { x: 0, y: 1, z: 4 },
+        target: { x: targetX, z: targetZ },
+        speed: 12,
+        damage: ability.damage + powerBonus,
+        effect: ability.effect,
+        effectDuration: ability.effectDuration,
+        effectDamage: ability.effectDamage,
+        radius: ability.radius,
+      };
+
+      setAbilities(prev => [...prev, projectile]);
+      setCooldowns(prev => ({
+        ...prev,
+        [type]: now + Math.max(500, ability.cooldown - cooldownReduction),
+      }));
+      setSelectedAbility(null);
+      addLog(`Cast ${ability.name}!`);
+    },
+    [cooldowns, addLog, upgrades]
+  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -791,11 +878,24 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
   }, []);
 
   useEffect(() => {
+    const { generateLoot } = useGameStore.getState();
+
     setEnemies(prev => {
       const updated = prev.map(enemy => {
         if (!enemy.isDead && enemy.health <= 0) {
-          const reward = 25 + wave * 15;
-          addLog(`💀 Enemy defeated! +${reward} gold`);
+          const goldReward = 25 + wave * 15;
+          const essenceReward = Math.floor((5 + wave * 2) * (Math.random() * 0.5 + 0.75));
+          missionRewardsRef.current.gold += goldReward;
+          missionRewardsRef.current.essence += essenceReward;
+          missionRewardsRef.current.enemiesKilled += 1;
+          addLog(`💀 Enemy defeated! +${goldReward} gold, +${essenceReward} essence`);
+
+          if (Math.random() < 0.4) {
+            const loot = generateLoot(wave);
+            setLootDrops(prev => [...prev, loot]);
+            addLog(`✨ Loot dropped: ${loot.name}!`);
+          }
+
           return { ...enemy, isDead: true };
         }
         return enemy;
@@ -805,7 +905,13 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
       const totalCount = updated.length;
 
       if (totalCount > 0 && livingCount === 0 && enemiesToSpawnRef.current === 0) {
-        addLog(`🏆 Wave ${wave} complete!`);
+        const waveGoldBonus = wave * 50;
+        const waveEssenceBonus = wave * 10;
+        missionRewardsRef.current.gold += waveGoldBonus;
+        missionRewardsRef.current.essence += waveEssenceBonus;
+        addLog(
+          `🏆 Wave ${wave} complete! +${waveGoldBonus} gold, +${waveEssenceBonus} essence bonus!`
+        );
         setTimeout(() => {
           setWave(w => w + 1);
           setPhase('spawning');
@@ -816,43 +922,139 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
     });
   }, [enemies, wave, addLog]);
 
-  const handleFloorClick = useCallback((e: any) => {
-    if (selectedTrap) {
-      const point = e.point;
-      if (Math.abs(point.x) > 9 || Math.abs(point.z) > 9) return;
+  const handleFloorClick = useCallback(
+    (e: any) => {
+      if (selectedTrap) {
+        const point = e.point;
+        if (Math.abs(point.x) > 9 || Math.abs(point.z) > 9) return;
 
-      const trapDamage = {
+        const baseTrapDamage = {
+          [TrapType.SPIKE]: 30,
+          [TrapType.FIRE]: 50,
+          [TrapType.BOULDER]: 80,
+        };
+        const trapBonus =
+          UPGRADES[UpgradeType.TRAP_DAMAGE].effectPerLevel[upgrades[UpgradeType.TRAP_DAMAGE]] || 0;
+        const trapCooldownReduction =
+          UPGRADES[UpgradeType.TRAP_COOLDOWN].effectPerLevel[upgrades[UpgradeType.TRAP_COOLDOWN]] ||
+          0;
+
+        const trap: Trap = {
+          id: `trap-${Date.now()}`,
+          type: selectedTrap,
+          tier: TrapTier.T1,
+          damage: baseTrapDamage[selectedTrap] + trapBonus,
+          position: { x: point.x, z: point.z },
+          cooldown: Math.max(500, 3000 - trapCooldownReduction),
+          lastTriggered: 0,
+          isActive: true,
+          isTriggered: false,
+          upgradeLevel: 1,
+        };
+
+        setTraps(prev => [...prev, trap]);
+        addLog(`Trap placed at (${point.x.toFixed(1)}, ${point.z.toFixed(1)})`);
+        setSelectedTrap(null);
+      }
+    },
+    [selectedTrap, addLog, upgrades]
+  );
+
+  const handleUpgradeTrap = useCallback(
+    (trapId: string) => {
+      const trap = traps.find(t => t.id === trapId);
+      if (!trap) return;
+
+      if (trap.tier === TrapTier.T3) {
+        addLog('Trap is already at max tier!');
+        return;
+      }
+
+      const upgradeCosts: Record<TrapTier, { gold: number; essence: number }> = {
+        [TrapTier.T1]: { gold: 75, essence: 15 },
+        [TrapTier.T2]: { gold: 150, essence: 30 },
+        [TrapTier.T3]: { gold: 300, essence: 60 },
+      };
+      const cost = upgradeCosts[trap.tier];
+
+      if (
+        missionRewardsRef.current.gold < cost.gold ||
+        missionRewardsRef.current.essence < cost.essence
+      ) {
+        addLog('Not enough currency for upgrade!');
+        return;
+      }
+
+      missionRewardsRef.current.gold -= cost.gold;
+      missionRewardsRef.current.essence -= cost.essence;
+
+      const baseTrapDamage = {
         [TrapType.SPIKE]: 30,
         [TrapType.FIRE]: 50,
         [TrapType.BOULDER]: 80,
       };
+      const trapBonus =
+        UPGRADES[UpgradeType.TRAP_DAMAGE].effectPerLevel[upgrades[UpgradeType.TRAP_DAMAGE]] || 0;
+      const trapCooldownReduction =
+        UPGRADES[UpgradeType.TRAP_COOLDOWN].effectPerLevel[upgrades[UpgradeType.TRAP_COOLDOWN]] ||
+        0;
 
-      const trap: Trap = {
-        id: `trap-${Date.now()}`,
-        type: selectedTrap,
-        damage: trapDamage[selectedTrap],
-        position: { x: point.x, z: point.z },
-        cooldown: 3000,
-        lastTriggered: 0,
-        isActive: true,
-        isTriggered: false,
+      const newTier: TrapTier = trap.tier === TrapTier.T1 ? TrapTier.T2 : TrapTier.T3;
+      const damageMultipliers: Record<TrapTier, number> = {
+        [TrapTier.T1]: 1.0,
+        [TrapTier.T2]: 1.5,
+        [TrapTier.T3]: 2.25,
+      };
+      const cooldownReductions: Record<TrapTier, number> = {
+        [TrapTier.T1]: 0,
+        [TrapTier.T2]: 500,
+        [TrapTier.T3]: 1000,
       };
 
-      setTraps(prev => [...prev, trap]);
-      addLog(`Trap placed at (${point.x.toFixed(1)}, ${point.z.toFixed(1)})`);
-      setSelectedTrap(null);
-    }
-  }, [selectedTrap, addLog]);
+      const newDamage = Math.floor(
+        (baseTrapDamage[trap.type] + trapBonus) * damageMultipliers[newTier]
+      );
+      const newCooldown = Math.max(500, 3000 - trapCooldownReduction - cooldownReductions[newTier]);
+
+      setTraps(prev =>
+        prev.map(t =>
+          t.id === trapId
+            ? {
+                ...t,
+                tier: newTier,
+                damage: newDamage,
+                cooldown: newCooldown,
+                upgradeLevel: t.upgradeLevel + 1,
+              }
+            : t
+        )
+      );
+
+      addLog(`Upgraded trap to ${newTier}! DMG: ${newDamage}, CD: ${newCooldown}ms`);
+    },
+    [traps, addLog, upgrades]
+  );
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onExit();
+      if (e.key === 'Escape') {
+        onExit({
+          waveReached: wave,
+          enemiesKilled: missionRewardsRef.current.enemiesKilled,
+          gold: missionRewardsRef.current.gold,
+          essence: missionRewardsRef.current.essence,
+          loot: collectedLootRef.current,
+        });
+      }
       if (e.key === '1') useAbility(classAbilities[0]);
       if (e.key === '2') useAbility(classAbilities[1]);
-      if (e.key === 'q' || e.key === 'Q') setSelectedTrap(prev => prev === TrapType.SPIKE ? null : TrapType.SPIKE);
+      if (e.key === 'q' || e.key === 'Q')
+        setSelectedTrap(prev => (prev === TrapType.SPIKE ? null : TrapType.SPIKE));
       if (e.key === 'w' && !['w', 'W'].includes(e.key)) return;
-      if (e.key === 'e' || e.key === 'E') setSelectedTrap(prev => prev === TrapType.FIRE ? null : TrapType.FIRE);
-      if (e.key === 'r' || e.key === 'R') setSelectedTrap(prev => prev === TrapType.BOULDER ? null : TrapType.BOULDER);
+      if (e.key === 'e' || e.key === 'E')
+        setSelectedTrap(prev => (prev === TrapType.FIRE ? null : TrapType.FIRE));
+      if (e.key === 'r' || e.key === 'R')
+        setSelectedTrap(prev => (prev === TrapType.BOULDER ? null : TrapType.BOULDER));
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -864,17 +1066,19 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <div style={{
-        position: 'absolute',
-        top: 20,
-        left: 20,
-        zIndex: 10,
-        background: 'rgba(0,0,0,0.85)',
-        padding: '1rem',
-        borderRadius: 8,
-        color: '#fff',
-        minWidth: '160px',
-      }}>
+      <div
+        style={{
+          position: 'absolute',
+          top: 20,
+          left: 20,
+          zIndex: 10,
+          background: 'rgba(0,0,0,0.85)',
+          padding: '1rem',
+          borderRadius: 8,
+          color: '#fff',
+          minWidth: '160px',
+        }}
+      >
         <h2 style={{ margin: 0, marginBottom: '0.5rem', color: '#ff6' }}>⚔️ {poiName}</h2>
         <div style={{ fontSize: '0.85rem', marginBottom: '0.2rem' }}>
           Wave: <span style={{ color: '#0ff', fontWeight: 'bold' }}>{wave}</span>
@@ -888,33 +1092,52 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
         </div>
       </div>
 
-      <div style={{
-        position: 'absolute',
-        top: 20,
-        right: 20,
-        zIndex: 10,
-        background: 'rgba(0,0,0,0.85)',
-        padding: '0.75rem',
-        borderRadius: 8,
-        color: '#fff',
-        width: '180px',
-        maxHeight: '150px',
-        overflowY: 'auto',
-        fontSize: '0.7rem',
-      }}>
+      <div
+        style={{
+          position: 'absolute',
+          top: 20,
+          right: 20,
+          zIndex: 10,
+          background: 'rgba(0,0,0,0.85)',
+          padding: '0.75rem',
+          borderRadius: 8,
+          color: '#fff',
+          width: '180px',
+          maxHeight: '150px',
+          overflowY: 'auto',
+          fontSize: '0.7rem',
+        }}
+      >
         <div style={{ fontWeight: 'bold', marginBottom: '0.25rem', color: '#888' }}>COMBAT LOG</div>
         {log.map((l, i) => (
-          <div key={i} style={{ 
-            color: l.includes('💀') ? '#0f0' : l.includes('⚡') ? '#ff0' : l.includes('✨') ? '#0ff' : '#aaa',
-            marginBottom: '0.1rem' 
-          }}>
+          <div
+            key={i}
+            style={{
+              color: l.includes('💀')
+                ? '#0f0'
+                : l.includes('⚡')
+                  ? '#ff0'
+                  : l.includes('✨')
+                    ? '#0ff'
+                    : '#aaa',
+              marginBottom: '0.1rem',
+            }}
+          >
             {l}
           </div>
         ))}
       </div>
 
       <button
-        onClick={onExit}
+        onClick={() =>
+          onExit({
+            waveReached: wave,
+            enemiesKilled: missionRewardsRef.current.enemiesKilled,
+            gold: missionRewardsRef.current.gold,
+            essence: missionRewardsRef.current.essence,
+            loot: collectedLootRef.current,
+          })
+        }
         style={{
           position: 'absolute',
           top: 20,
@@ -933,26 +1156,158 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
         Exit (ESC)
       </button>
 
-      {selectedTrap && (
-        <div style={{
+      <div
+        style={{
           position: 'absolute',
-          top: 80,
-          left: '50%',
-          transform: 'translateX(-50%)',
+          top: 20,
+          left: 200,
           zIndex: 10,
-          background: 'rgba(0,0,0,0.7)',
-          padding: '0.4rem 1rem',
-          borderRadius: 4,
-          color: '#0f0',
-          fontSize: '0.8rem',
-        }}>
+          background: 'rgba(0,0,0,0.85)',
+          padding: '0.75rem',
+          borderRadius: 8,
+          color: '#fff',
+          display: 'flex',
+          gap: '1rem',
+          fontSize: '0.85rem',
+        }}
+      >
+        <div style={{ color: '#ffd700' }}>💰 {missionRewardsRef.current.gold}</div>
+        <div style={{ color: '#9932cc' }}>✨ {missionRewardsRef.current.essence}</div>
+        <button
+          onClick={() => {
+            const { addLoot } = useGameStore.getState();
+            lootDrops.forEach(drop => {
+              addLoot(drop);
+              collectedLootRef.current.push(drop);
+            });
+            if (lootDrops.length > 0) {
+              addLog(`📦 Collected ${lootDrops.length} loot item(s)!`);
+            }
+            setLootDrops([]);
+          }}
+          style={{
+            background: lootDrops.length > 0 ? '#2a7a2a' : '#444',
+            border: 'none',
+            borderRadius: 4,
+            color: '#fff',
+            padding: '0.25rem 0.5rem',
+            cursor: lootDrops.length > 0 ? 'pointer' : 'not-allowed',
+            fontSize: '0.75rem',
+          }}
+        >
+          📦 Pickup ({lootDrops.length})
+        </button>
+      </div>
+
+      {lootDrops.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 200,
+            left: 20,
+            zIndex: 10,
+            background: 'rgba(0,0,0,0.9)',
+            padding: '0.75rem',
+            borderRadius: 8,
+            color: '#fff',
+            maxWidth: '250px',
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 'bold',
+              marginBottom: '0.5rem',
+              color: '#888',
+              fontSize: '0.75rem',
+            }}
+          >
+            DROPPED LOOT
+          </div>
+          {lootDrops.map(drop => (
+            <div
+              key={drop.id}
+              style={{
+                padding: '0.4rem',
+                marginBottom: '0.25rem',
+                background: 'rgba(255,255,255,0.05)',
+                borderRadius: 4,
+                borderLeft: `3px solid ${RARITY_COLORS[drop.rarity]}`,
+                fontSize: '0.8rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <span>{drop.icon}</span>
+                <span style={{ color: RARITY_COLORS[drop.rarity] }}>{drop.name}</span>
+              </div>
+              <div style={{ fontSize: '0.65rem', color: '#888', marginLeft: '1.2rem' }}>
+                {drop.modifiers.map(m => m.description).join(', ')}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 200,
+          right: 20,
+          zIndex: 10,
+          background: 'rgba(0,0,0,0.9)',
+          padding: '0.75rem',
+          borderRadius: 8,
+          color: '#fff',
+          width: '180px',
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 'bold',
+            marginBottom: '0.5rem',
+            color: '#888',
+            fontSize: '0.75rem',
+          }}
+        >
+          TRAP TIERS
+        </div>
+        <div style={{ fontSize: '0.7rem', marginBottom: '0.25rem' }}>
+          <span style={{ color: TRAP_TIER_COLORS[TrapTier.T1] }}>● T1</span> Base stats
+        </div>
+        <div style={{ fontSize: '0.7rem', marginBottom: '0.25rem' }}>
+          <span style={{ color: TRAP_TIER_COLORS[TrapTier.T2] }}>● T2</span> +50% DMG, -0.5s CD
+          (75g+15e)
+        </div>
+        <div style={{ fontSize: '0.7rem', marginBottom: '0.25rem' }}>
+          <span style={{ color: TRAP_TIER_COLORS[TrapTier.T3] }}>● T3</span> +125% DMG, -1s CD
+          (150g+30e)
+        </div>
+        <div style={{ fontSize: '0.65rem', color: '#666', marginTop: '0.5rem' }}>
+          Right-click trap to upgrade
+        </div>
+      </div>
+
+      {selectedTrap && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 80,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+            background: 'rgba(0,0,0,0.7)',
+            padding: '0.4rem 1rem',
+            borderRadius: 4,
+            color: '#0f0',
+            fontSize: '0.8rem',
+          }}
+        >
           Click floor to place {selectedTrap} trap
         </div>
       )}
 
       <TrapSelector selectedTrap={selectedTrap} onSelect={setSelectedTrap} />
-      
-      <AbilityBar 
+
+      <AbilityBar
         abilities={classAbilities}
         cooldowns={cooldowns}
         onUseAbility={useAbility}
@@ -962,35 +1317,32 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
 
       <Canvas shadows>
         <PerspectiveCamera makeDefault position={[0, 15, 15]} fov={55} />
-        <OrbitControls 
+        <OrbitControls
           enablePan={false}
           minDistance={10}
           maxDistance={30}
           minPolarAngle={Math.PI / 6}
           maxPolarAngle={Math.PI / 2.5}
         />
-        
+
         <Lighting />
         <Room />
         <PathVisualization />
-        
-        <mesh 
-          rotation={[-Math.PI / 2, 0, 0]} 
-          position={[0, 0.02, 0]}
-          onClick={handleFloorClick}
-        >
+
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} onClick={handleFloorClick}>
           <planeGeometry args={[20, 20]} />
           <meshBasicMaterial transparent opacity={0} />
         </mesh>
-        
+
         {traps.map(trap => (
-          <TrapMesh 
-            key={trap.id} 
-            trap={trap} 
+          <TrapMesh
+            key={trap.id}
+            trap={trap}
             onRemove={() => setTraps(prev => prev.filter(t => t.id !== trap.id))}
+            onUpgrade={() => handleUpgradeTrap(trap.id)}
           />
         ))}
-        
+
         {abilityEffects.map(effect => (
           <AbilityEffect
             key={effect.id}
@@ -999,7 +1351,7 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
             onComplete={() => setAbilityEffects(prev => prev.filter(e => e.id !== effect.id))}
           />
         ))}
-        
+
         {abilities.map(projectile => (
           <AbilityProjectileMesh
             key={projectile.id}
@@ -1007,7 +1359,7 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
             onHit={handleAbilityHit}
           />
         ))}
-        
+
         {enemies.map(enemy => (
           <EnemyMesh
             key={enemy.id}
@@ -1017,7 +1369,7 @@ export function MissionScene({ poiName, playerClass, onExit }: MissionSceneProps
             onStatusEffect={applyAbilityEffect}
           />
         ))}
-        
+
         <fog attach="fog" args={['#050510', 20, 50]} />
       </Canvas>
     </div>

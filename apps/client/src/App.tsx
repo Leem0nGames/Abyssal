@@ -1,10 +1,24 @@
-import { useRef, Suspense, useState } from 'react';
+import { useRef, Suspense, useState, useEffect } from 'react';
 import { Room } from 'colyseus.js';
-import { HubState, PlayerClass, CLASS_DATA } from '@game/shared';
+import { HubState, PlayerClass, CLASS_DATA, LootItem } from '@game/shared';
 import { useColyseus, useKeyboardMovement, useGameRenderer } from './hooks/useColyseus';
 import { useGameStore } from './store/gameStore';
 import { MissionScene } from './game/MissionScene';
+import { UpgradeShop } from './game/UpgradeShop';
+import { Inventory } from './game/Inventory';
+import { ResultsScreen } from './game/ResultsScreen';
 import './index.css';
+
+type Screen = 'hub' | 'mission' | 'results';
+
+interface MissionResultData {
+  poiName: string;
+  waveReached: number;
+  enemiesKilled: number;
+  goldEarned: number;
+  essenceEarned: number;
+  lootCollected: LootItem[];
+}
 
 const POI_ICONS: Record<string, string> = {
   dungeon: '🏰',
@@ -33,10 +47,10 @@ function ClassSelection({ onSelect }: { onSelect: (playerClass: PlayerClass) => 
     <div className="class-selection">
       <h2>Choose Your Class</h2>
       <div className="class-grid">
-        {Object.values(PlayerClass).map((playerClass) => {
+        {Object.values(PlayerClass).map(playerClass => {
           const classData = CLASS_DATA[playerClass];
           const isSelected = selectedClass === playerClass;
-          
+
           return (
             <div
               key={playerClass}
@@ -49,9 +63,7 @@ function ClassSelection({ onSelect }: { onSelect: (playerClass: PlayerClass) => 
               <div className="class-element">
                 {ELEMENT_ICONS[classData.element]} {classData.element}
               </div>
-              <div className="class-subelement">
-                {classData.subElement}
-              </div>
+              <div className="class-subelement">{classData.subElement}</div>
               <p className="class-description">{classData.description}</p>
             </div>
           );
@@ -73,9 +85,37 @@ function App() {
   const gameContainerRef = useRef<HTMLDivElement>(null);
   const [selectedClass, setSelectedClass] = useState<PlayerClass>(PlayerClass.ELEMENTALIST);
   const [showClassSelect, setShowClassSelect] = useState(true);
-  
-  const { connected, playerId, playerLevel, players, zones, pois, nearbyPOI, currentMission, notification, setCurrentMission } = useGameStore();
+  const [currentScreen, setCurrentScreen] = useState<Screen>('hub');
+  const [missionResult, setMissionResult] = useState<MissionResultData | null>(null);
+  const [currentPOI, setCurrentPOI] = useState<{ name: string } | null>(null);
+
+  const {
+    connected,
+    playerId,
+    playerLevel,
+    players,
+    zones,
+    pois,
+    nearbyPOI,
+    notification,
+    currentMission,
+    setCurrentMission,
+    addCurrency,
+    currency,
+    showUpgradeShop,
+    setShowUpgradeShop,
+    inventory,
+    showInventory,
+    setShowInventory,
+  } = useGameStore();
   const { connect } = useColyseus();
+
+  useEffect(() => {
+    if (currentMission) {
+      setCurrentPOI({ name: currentMission.name });
+      setCurrentScreen('mission');
+    }
+  }, [currentMission]);
 
   useKeyboardMovement(roomRef, playerId, players, pois, playerLevel);
   useGameRenderer(gameContainerRef, players, playerId, zones, pois, playerLevel);
@@ -95,17 +135,66 @@ function App() {
     roomRef.current = room;
   };
 
-  if (currentMission) {
+  const handleMissionExit = (results: {
+    waveReached: number;
+    enemiesKilled: number;
+    gold: number;
+    essence: number;
+    loot: LootItem[];
+  }) => {
+    setMissionResult({
+      poiName: currentPOI?.name || 'Unknown',
+      waveReached: results.waveReached,
+      enemiesKilled: results.enemiesKilled,
+      goldEarned: results.gold,
+      essenceEarned: results.essence,
+      lootCollected: results.loot,
+    });
+    addCurrency(results.gold, results.essence);
+    setCurrentMission(null);
+    setCurrentPOI(null);
+    setCurrentScreen('results');
+  };
+
+  const handleContinueFromResults = () => {
+    setMissionResult(null);
+    setCurrentScreen('hub');
+  };
+
+  if (currentScreen === 'results' && missionResult) {
+    return (
+      <ResultsScreen
+        poiName={missionResult.poiName}
+        waveReached={missionResult.waveReached}
+        enemiesKilled={missionResult.enemiesKilled}
+        goldEarned={missionResult.goldEarned}
+        essenceEarned={missionResult.essenceEarned}
+        lootCollected={missionResult.lootCollected}
+        onContinue={handleContinueFromResults}
+      />
+    );
+  }
+
+  if (currentScreen === 'mission' && currentPOI) {
     return (
       <div className="mission-container">
         <Suspense fallback={<div className="loading">Loading 3D Scene...</div>}>
-          <MissionScene 
-            poiName={currentMission.name} 
-            onExit={() => setCurrentMission(null)} 
+          <MissionScene
+            poiName={currentPOI.name}
+            playerClass={selectedClass}
+            onExit={handleMissionExit}
           />
         </Suspense>
       </div>
     );
+  }
+
+  if (showUpgradeShop) {
+    return <UpgradeShop />;
+  }
+
+  if (showInventory) {
+    return <Inventory />;
   }
 
   return (
@@ -114,9 +203,7 @@ function App() {
         <h1>Hub World</h1>
 
         {notification && (
-          <div className={`notification ${notification.type}`}>
-            {notification.message}
-          </div>
+          <div className={`notification ${notification.type}`}>{notification.message}</div>
         )}
 
         {showClassSelect ? (
@@ -132,10 +219,17 @@ function App() {
               {!connected && (
                 <form onSubmit={handleJoin} className="form">
                   <div className="selected-class">
-                    <span className="class-badge" style={{ background: CLASS_DATA[selectedClass].color }}>
+                    <span
+                      className="class-badge"
+                      style={{ background: CLASS_DATA[selectedClass].color }}
+                    >
                       {CLASS_ICONS[selectedClass]} {CLASS_DATA[selectedClass].name}
                     </span>
-                    <button type="button" onClick={() => setShowClassSelect(true)} className="change-class-btn">
+                    <button
+                      type="button"
+                      onClick={() => setShowClassSelect(true)}
+                      className="change-class-btn"
+                    >
                       Change
                     </button>
                   </div>
@@ -146,12 +240,27 @@ function App() {
               )}
 
               {connected && playerId && (
-                <div className="player-info">
-                  <span className="player-level-badge">Lvl {playerLevel}</span>
-                  <span className="player-class-badge" style={{ background: CLASS_DATA[selectedClass].color }}>
-                    {CLASS_ICONS[selectedClass]} {CLASS_DATA[selectedClass].name}
-                  </span>
-                </div>
+                <>
+                  <div className="player-info">
+                    <span className="player-level-badge">Lvl {playerLevel}</span>
+                    <span
+                      className="player-class-badge"
+                      style={{ background: CLASS_DATA[selectedClass].color }}
+                    >
+                      {CLASS_ICONS[selectedClass]} {CLASS_DATA[selectedClass].name}
+                    </span>
+                  </div>
+                  <div className="card currency-display">
+                    <div className="currency-item gold">💰 {currency.gold}</div>
+                    <div className="currency-item essence">✨ {currency.essence}</div>
+                    <button onClick={() => setShowInventory(true)} className="inventory-btn">
+                      🎒 ({inventory.length})
+                    </button>
+                    <button onClick={() => setShowUpgradeShop(true)} className="upgrade-btn">
+                      ⚡
+                    </button>
+                  </div>
+                </>
               )}
             </div>
 
@@ -163,7 +272,9 @@ function App() {
                 </div>
                 <p className="poi-type">{nearbyPOI.type.toUpperCase()}</p>
                 {playerLevel >= nearbyPOI.minLevel ? (
-                  <p className="poi-hint">Press <strong>E</strong> to enter</p>
+                  <p className="poi-hint">
+                    Press <strong>E</strong> to enter
+                  </p>
                 ) : (
                   <p className="poi-locked">Requires Level {nearbyPOI.minLevel}</p>
                 )}
@@ -181,9 +292,16 @@ function App() {
                       <span
                         className="player-color"
                         style={{
-                          background: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9', '#fd79a8', '#a29bfe'][
-                            index % 8
-                          ],
+                          background: [
+                            '#ff6b6b',
+                            '#4ecdc4',
+                            '#45b7d1',
+                            '#96ceb4',
+                            '#ffeaa7',
+                            '#dfe6e9',
+                            '#fd79a8',
+                            '#a29bfe',
+                          ][index % 8],
                         }}
                       />
                       <span className="player-name">
@@ -200,7 +318,7 @@ function App() {
             <div className="card">
               <h2>Zones</h2>
               <ul className="zone-list">
-                {zones.map((zone) => {
+                {zones.map(zone => {
                   const isLocked = playerLevel < zone.minLevel;
                   return (
                     <li key={zone.id} className={isLocked ? 'locked' : 'unlocked'}>
@@ -216,13 +334,15 @@ function App() {
             <div className="card">
               <h2>Points of Interest</h2>
               <ul className="poi-list">
-                {pois.map((poi) => {
+                {pois.map(poi => {
                   const isLocked = playerLevel < poi.minLevel;
                   return (
                     <li key={poi.id} className={isLocked ? 'locked' : 'unlocked'}>
                       <span className="poi-icon">{POI_ICONS[poi.type]}</span>
                       <span className="poi-name">{poi.name}</span>
-                      <span className="poi-level">{isLocked ? `Lvl ${poi.minLevel}` : 'Available'}</span>
+                      <span className="poi-level">
+                        {isLocked ? `Lvl ${poi.minLevel}` : 'Available'}
+                      </span>
                     </li>
                   );
                 })}
@@ -234,7 +354,9 @@ function App() {
               <div className="controls-grid">
                 <div className="control-item">
                   <div className="keys">
-                    <div className="key-row"><span className="key">W</span></div>
+                    <div className="key-row">
+                      <span className="key">W</span>
+                    </div>
                     <div className="key-row">
                       <span className="key">A</span>
                       <span className="key">S</span>

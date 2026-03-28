@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  player   Player?
+
+  @@map("users")
+}
+
+model Player {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  level         Int      @default(1)
+  experience    Int      @default(0)
+  gold          Int      @default(100)
+  essence       Int      @default(10)
+  class         String   @default("elementalist")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  progress      Progress?
+  inventory     Inventory[]
+
+  @@map("players")
+}
+
+model Progress {
+  id                  String  @id @default(uuid())
+  playerId            String  @unique
+  player              Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  highestWaveReached  Int     @default(0)
+  totalEnemiesKilled  Int     @default(0)
+  totalGoldEarned     Int     @default(0)
+  totalEssenceEarned  Int     @default(0)
+  trapDamageLevel     Int     @default(0)
+  trapCooldownLevel   Int     @default(0)
+  abilityPowerLevel   Int     @default(0)
+  abilityCooldownLevel Int    @default(0)
+  updatedAt           DateTime @updatedAt
+
+  @@map("progress")
+}
+
+model Inventory {
+  id        String   @id @default(uuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  itemName  String
+  itemType  String
+  rarity    String
+  level     Int
+  sellValue Int
+  icon      String
+  modifiers String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("inventory")
+}
