@@ -3,11 +3,16 @@ import { Server } from 'colyseus';
 import { createServer } from 'http';
 import express from 'express';
 import { HubRoom } from './rooms/HubRoom.js';
+import { WebSocketTransport } from '@colyseus/ws-transport';
 
 const app = express();
 const httpServer = createServer(app);
 
-const gameServer = new Server({ server: httpServer });
+const gameServer = new Server({
+  transport: new WebSocketTransport({
+    server: httpServer,
+  }),
+});
 
 gameServer.define('hub', HubRoom);
 
